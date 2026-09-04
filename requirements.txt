@@ -1,0 +1,2 @@
+pyserial>=3.4,<4
+# OpenCV 4.1.2 is already installed in the supplied Yahboom Raspbian image.

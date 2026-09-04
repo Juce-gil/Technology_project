@@ -1,0 +1,46 @@
+# Python caches and virtual environments
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Native build outputs
+*.o
+*.obj
+*.so
+*.dll
+*.a
+*.lib
+*.exe
+
+# Runtime output and local configuration
+*.log
+*.pid
+*.tmp
+*.swp
+.env
+.env.*
+config.local.*
+logs/
+models/
+
+# IDE and operating-system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Test and coverage output
+.coverage
+coverage.xml
+htmlcov/
+
+# Local captures and generated media
+captures/
+*.avi
+*.mp4
