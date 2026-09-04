@@ -19,6 +19,7 @@ from urllib.parse import parse_qs
 
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CONTROL_PORT = 18888
 
 
 class CarProcess:
@@ -36,7 +37,7 @@ class CarProcess:
             raise ValueError("无效电机后端")
         command = [sys.executable, "-u", os.path.join(PROJECT_ROOT, "main.py"),
                    "--line-source", line_source, "--motor-backend", motor_backend,
-                   "--tcp", "--tcp-host", "127.0.0.1"]
+                   "--tcp", "--tcp-host", "127.0.0.1", "--tcp-port", str(CONTROL_PORT)]
         if motor_backend == "arduino":
             command.extend(("--arduino-port", arduino_port))
         return command
@@ -101,7 +102,7 @@ class CarProcess:
         if not self.running():
             raise RuntimeError("SmartCarV2 未运行")
         try:
-            with socket.create_connection(("127.0.0.1", 8888), timeout=1.0) as sock:
+            with socket.create_connection(("127.0.0.1", CONTROL_PORT), timeout=1.0) as sock:
                 self._recv_frame(sock)
                 sock.sendall(("$4WD,AUTH,{}#".format(self.control_token)).encode("utf-8"))
                 auth = self._recv_frame(sock)

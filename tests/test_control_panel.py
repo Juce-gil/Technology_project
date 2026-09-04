@@ -3,7 +3,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
-from control_panel import CarProcess
+from control_panel import CONTROL_PORT, CarProcess
 
 
 class ControlPanelTests(unittest.TestCase):
@@ -11,7 +11,8 @@ class ControlPanelTests(unittest.TestCase):
         command = CarProcess.command("ir", "gpio")
         self.assertEqual(command[0], sys.executable)
         self.assertIn("--line-source", command)
-        self.assertEqual(command[-2:], ["--tcp-host", "127.0.0.1"])
+        self.assertIn("--tcp-host", command)
+        self.assertEqual(command[-2:], ["--tcp-port", str(CONTROL_PORT)])
 
     def test_arduino_port_is_an_argument_not_a_shell_command(self):
         port = "/dev/ttyACM0;touch /tmp/unsafe"
