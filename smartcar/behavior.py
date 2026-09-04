@@ -107,12 +107,15 @@ class BehaviorManager:
         with self._status_lock:
             obstacle, line = self.last_obstacle, self.last_line
         result = {"state": self.state.value, "person_hits": self.person_hits}
+        try: result["tracking"] = [bool(value) for value in self.hal.read_tracking()]
+        except Exception: result["tracking"] = None
         if obstacle is not None:
             result.update({"obstacle": obstacle.level.value, "distance_cm": obstacle.distance_cm,
                            "avoid": list(obstacle.infrared)})
         if line is not None:
             result.update({"line_error": line.error, "line_confidence": line.confidence,
                            "line_detected": line.detected})
+            if line.raw is not None: result["line_raw"] = list(line.raw)
         return result
 
     def _person_blocked(self):

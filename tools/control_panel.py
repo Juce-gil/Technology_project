@@ -160,7 +160,7 @@ label{display:block;margin:8px 0}select,input[type=text]{width:100%;box-sizing:b
 button{padding:10px 16px;border:0;border-radius:7px;background:#24689b;color:white;font-weight:600;margin:5px 5px 5px 0;cursor:pointer}
 button.stop{background:#a33232}button.warn{background:#9a6700}.status{font-weight:700}.ok{color:#237447}.bad{color:#a33232}
 pre{background:#101820;color:#d9e4ec;padding:14px;border-radius:8px;min-height:180px;max-height:390px;overflow:auto;white-space:pre-wrap}
-.note{color:#52606b;font-size:14px}.message{color:#a33232;font-weight:600}
+.note{color:#52606b;font-size:14px}.message{color:#a33232;font-weight:600}.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:10px}.tile{background:#f6f8fa;border:1px solid #d8e0e6;border-radius:9px;padding:12px}.tile b{display:block;font-size:20px;margin-top:5px}.hint{padding:12px;border-radius:8px;background:#fff4ce;border-left:5px solid #9a6700}.sensor{display:inline-block;min-width:34px;text-align:center;padding:7px;margin:3px;border-radius:6px;background:#dce6ec}.sensor.on{background:#c93636;color:#fff}button:disabled{opacity:.45;cursor:not-allowed}
 </style></head><body><main>
 <h1>SmartCarV2 控制面板</h1>
 <div class="card"><h2>运行状态</h2><div id="status">正在读取...</div></div>
@@ -179,12 +179,19 @@ pre{background:#101820;color:#d9e4ec;padding:14px;border-radius:8px;min-height:1
 <p class="note">请求恢复不能绕过障碍、稳定清除时间或 FAULT。摄像头当前尚未完成硬件恢复，优先使用四路红外模式。</p>{message}</div>
 <div class="card"><h2>运行日志</h2><pre id="logs">暂无日志</pre></div>
 </main><script>
-async function refresh(){try{const r=await fetch('/api/status');const d=await r.json();
-const state=d.car&&d.car.state?d.car.state:'不可用';document.getElementById('status').innerHTML=
-'SmartCarV2：<span class="'+(d.running?'ok':'bad')+'">'+(d.running?'运行中':'已停止')+'</span>　'+
-'原厂程序：<span class="'+(d.legacy_running?'bad':'ok')+'">'+(d.legacy_running?'运行中':'已停止')+'</span>　状态：'+state+
-(d.status_error?'　'+d.status_error:'');document.getElementById('logs').textContent=(d.logs||[]).join('\n')||'暂无日志';}
-catch(e){document.getElementById('status').textContent='状态读取失败：'+e}}refresh();setInterval(refresh,1000);
+const statusBox=document.getElementById('status');
+statusBox.parentElement.insertAdjacentHTML('afterend','<div class="card"><h2>实时诊断</h2><div id="reason" class="hint">正在读取状态…</div><div class="tiles" id="tiles" style="margin-top:12px"></div><div style="margin-top:12px"><b>四路循迹：</b><span id="lineSensors">尚无数据</span></div></div>');
+const labels={running:'运行',paused:'安全暂停',wait_clear:'等待手动恢复',fault:'故障锁定',clear:'无障碍',warning:'距离警告',blocked:'检测到障碍',sensor_error:'传感器异常'};
+function safe(v){return String(v===undefined?'—':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function stopReason(d){const c=d.car||{};if(!d.running)return '控制程序尚未启动：选择模式、确认车轮架空后点击“启动循迹”。';if(c.state==='running')return '控制循环正在运行。';if(c.obstacle==='blocked')return '已刹车：左右避障红外检测到障碍，请先清除障碍。';if(c.obstacle==='sensor_error')return '已刹车：超声波测距异常，请检查模块和排线。';if(c.state==='wait_clear')return '障碍已清除，请点击“请求恢复”。';if(c.state==='fault')return '故障已经锁定，请查看日志，修复后安全停止并重新启动。';return '车辆当前保持安全停车。';}
+function sensorHtml(values,names){if(!Array.isArray(values))return '尚无数据';return values.map((v,i)=>'<span class="sensor '+(v?'on':'')+'">'+names[i]+' '+(v?'1':'0')+'</span>').join('');}
+async function refresh(){try{const r=await fetch('/api/status',{cache:'no-store'});const d=await r.json(),c=d.car||{};
+statusBox.innerHTML='SmartCarV2：<span class="'+(d.running?'ok':'bad')+'">'+(d.running?'运行中':'已停止')+'</span>　原厂程序：<span class="'+(d.legacy_running?'bad':'ok')+'">'+(d.legacy_running?'运行中':'已停止')+'</span>　状态：<b>'+safe(labels[c.state]||c.state||'不可用')+'</b>';
+document.getElementById('reason').textContent=stopReason(d);document.getElementById('tiles').innerHTML='<div class="tile">障碍状态<b>'+safe(labels[c.obstacle]||c.obstacle)+'</b></div><div class="tile">超声波距离<b>'+safe(typeof c.distance_cm==='number'?c.distance_cm.toFixed(1)+' cm':'—')+'</b></div><div class="tile">循迹误差<b>'+safe(typeof c.line_error==='number'?c.line_error.toFixed(2):'—')+'</b></div><div class="tile">循迹置信度<b>'+safe(typeof c.line_confidence==='number'?(c.line_confidence*100).toFixed(0)+'%':'—')+'</b></div><div class="tile">左右避障<b>'+sensorHtml(c.avoid,['左','右'])+'</b></div>';
+document.getElementById('lineSensors').innerHTML=sensorHtml(c.tracking||c.line_raw,['L1','L2','R1','R2']);document.getElementById('logs').textContent=(d.logs||[]).join('\n')||'暂无日志';
+const resume=document.querySelector('input[value="resume"]');if(resume)resume.parentElement.querySelector('button').disabled=c.state!=='wait_clear';
+}catch(e){statusBox.textContent='状态读取失败：'+e}}
+refresh();setInterval(refresh,1000);
 </script></body></html>"""
 
 

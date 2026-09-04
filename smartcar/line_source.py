@@ -8,6 +8,7 @@ class LineReading:
     confidence: float
     detected: bool
     timestamp: float
+    raw: tuple = None
 
 
 class IRLineSource:
@@ -18,8 +19,9 @@ class IRLineSource:
     def read(self):
         values = self.hal.read_tracking()
         active = [w for w, value in zip(self.WEIGHTS, values) if value]
-        if not active: return LineReading(0.0, 0.0, False, time.monotonic())
-        return LineReading(sum(active) / len(active), len(active) / 4.0, True, time.monotonic())
+        raw = tuple(bool(value) for value in values)
+        if not active: return LineReading(0.0, 0.0, False, time.monotonic(), raw)
+        return LineReading(sum(active) / len(active), len(active) / 4.0, True, time.monotonic(), raw)
 
     def is_healthy(self): return True
 
