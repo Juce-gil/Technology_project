@@ -69,6 +69,26 @@ LED,<r>,<g>,<b>
 PYTHONPATH=. python3 tools/sensor_monitor.py --duration 30
 ```
 
+## 中文网页控制面板
+
+在树莓派上设置面板密码并启动：
+
+```bash
+cd /home/pi/SmartCarV2
+export SMARTCAR_PANEL_TOKEN='请替换为强密码'
+./start_panel.sh
+```
+
+电脑或手机连接同一网络后访问：
+
+```text
+http://树莓派IP:8080
+```
+
+浏览器认证用户名固定为 `smartcar`，密码为 `SMARTCAR_PANEL_TOKEN`。面板可以选择红外或摄像头巡线、GPIO 或 Arduino 后端，并提供状态、日志、启动、安全停止、暂停及受状态机约束的恢复请求。
+
+启动循迹前必须勾选轮子已架空和环境安全。原厂 `bluetooth_control` 仍运行时，面板会拒绝启动 SmartCarV2。
+
 ## 文档
 
 - [安装与运行](docs/INSTALL.md)

@@ -106,3 +106,14 @@ PYTHONPATH=. python3 main.py --line-source ir \
 ## 当前按钮限制
 
 原厂不同示例把 wiringPi 10 分别定义为按钮或蜂鸣器，当前小车照片也没有显示可确认的实体按钮。SmartCarV2 暂时保留按钮接口，同时支持经过认证且受安全状态机约束的 TCP `RESUME`。
+
+## 中文网页控制面板
+
+```bash
+cd /home/pi/SmartCarV2
+chmod +x start_panel.sh
+export SMARTCAR_PANEL_TOKEN='请替换为强密码'
+./start_panel.sh
+```
+
+随后访问 `http://树莓派IP:8080`，使用用户名 `smartcar` 和设置的面板密码登录。面板启动本身不会初始化 GPIO 或转动电机。点击启动循迹前必须确认轮子架空，并停止原厂控制程序。
