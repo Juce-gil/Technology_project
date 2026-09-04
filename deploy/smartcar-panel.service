@@ -1,0 +1,18 @@
+[Unit]
+Description=SmartCarV2 web control panel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/SmartCarV2
+Environment=PYTHONPATH=/home/pi/SmartCarV2
+Environment=SMARTCAR_PANEL_TOKEN=1234
+ExecStart=/usr/bin/python3 /home/pi/SmartCarV2/tools/control_panel.py --host 0.0.0.0 --port 8081
+Restart=always
+RestartSec=2
+TimeoutStopSec=8
+
+[Install]
+WantedBy=multi-user.target
