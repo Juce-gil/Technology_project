@@ -10,4 +10,4 @@ if [ -z "${SMARTCAR_PANEL_TOKEN:-}" ]; then
 fi
 
 export PYTHONPATH="$(pwd)"
-exec python3 tools/control_panel.py --host 0.0.0.0 --port 8080
+exec python3 tools/control_panel.py --host 0.0.0.0 --port 8081

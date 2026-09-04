@@ -82,7 +82,7 @@ export SMARTCAR_PANEL_TOKEN='请替换为强密码'
 电脑或手机连接同一网络后访问：
 
 ```text
-http://树莓派IP:8080
+http://树莓派IP:8081
 ```
 
 浏览器认证用户名固定为 `smartcar`，密码为 `SMARTCAR_PANEL_TOKEN`。面板可以选择红外或摄像头巡线、GPIO 或 Arduino 后端，并提供状态、日志、启动、安全停止、暂停及受状态机约束的恢复请求。

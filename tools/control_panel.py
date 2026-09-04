@@ -257,7 +257,7 @@ class PanelHandler(BaseHTTPRequestHandler):
 def parse_args():
     parser = argparse.ArgumentParser(description="SmartCarV2 中文网页控制面板")
     parser.add_argument("--host", default="0.0.0.0")
-    parser.add_argument("--port", type=int, default=8080)
+    parser.add_argument("--port", type=int, default=8081)
     parser.add_argument("--token", default=os.environ.get("SMARTCAR_PANEL_TOKEN"))
     return parser.parse_args()
 
