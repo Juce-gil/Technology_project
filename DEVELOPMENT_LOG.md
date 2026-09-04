@@ -1,128 +1,111 @@
-# SmartCarV2 Development Log
+# SmartCarV2 开发记录
 
-Paused: 2026-09-04 (Asia/Shanghai)
+更新日期：2026 年 9 月 4 日
 
-Resumed and optimized: 2026-09-04 (Asia/Shanghai)
+## 项目整理
 
-## Optimization pass
+- 将 `F:\开发板\SmartCarV2` 确定为唯一主版本。
+- 检查旧副目录 `SmartCarV2.2`，迁移可复用的 TCP 控制、HSV 目标检测和视觉目标转向思路。
+- 未迁移不安全的旧 HAL、失败后继续运行的超声波逻辑、障碍自动恢复和无限丢线行驶逻辑。
+- 完成测试后删除旧副目录。
 
-- Fixed latched `FAULT` handling so a lost-line fault cannot drive again on the
-  following control cycle.
-- Required a post-stop button release before a new press can resume motion.
-- Added camera-line and DNN health checks that fail safe.
-- Changed TCP STATUS to cached readings, preventing concurrent ultrasonic pulses.
-- Changed Arduino heartbeats so they cannot keep stale motion alive.
-- Added deterministic cross-platform DNN coordinate rounding.
-- Added HAL partial-initialization cleanup, PWM shutdown, 64-bit ultrasonic
-  timing and repeat servo pulses.
-- Implemented distinct low-speed hold, directional search and final stop phases
-  for line loss.
-- Added startup configuration validation, hardened Arduino short-write/cleanup
-  handling and expanded the suite to 21 tests.
+## 安全与稳定性优化
 
-## Sensor calibration run
+- 修复 `FAULT` 状态，使丢线故障不会在下一控制周期重新驱动电机。
+- 恢复前要求按钮先释放再重新按下，避免障碍期间一直按住按钮导致误恢复。
+- 增加摄像头巡线和 DNN 健康检查，线程失效时按安全故障处理。
+- TCP `STATUS` 改为读取行为循环缓存，避免并发触发超声波。
+- Arduino 心跳不能继续维持已经过期的电机命令。
+- 增加串口短写检测和可靠关闭。
+- 增加 HAL 部分初始化失败清理、PWM 停止、64 位超声波计时和重复舵机脉冲。
+- 将丢线过程拆分为低速保持、方向搜索和锁定停车。
+- 增加启动配置校验。
 
-A 30-second read-only monitor was run with motors continuously braked. The
-ultrasonic path responded to nearby objects (samples around 4.5, 6.9, 11.9,
-25.1 and 68 cm; open-area readings around 160 cm). Tracking stayed fixed at
-`[0,0,0,1]`, avoid stayed fixed at `[0,1]`, and the button remained `False`.
-The ultrasonic path is operational; tracking, IR avoid and button require a
-focused wiring/pin/sensitivity check if they were physically exercised during
-the capture.
+## 停止恢复更新
 
-## Current status
+实物照片没有显示可确认的车载 `KEY` 或 `START` 按钮，并且原厂不同示例对 wiringPi 10 存在按钮和蜂鸣器定义冲突。
 
-Implementation is intentionally paused at the user's request. Do not assume the
-optional vision changes at the end of this log have been deployed to the Pi.
+项目新增经过认证的 TCP `RESUME` 命令。该命令只提交请求，不直接驱动电机。行为循环只有在系统处于 `WAIT_CLEAR`、障碍持续清除且稳定时间满足后才会接受请求。障碍再次出现会取消已经提交的请求，`FAULT` 状态不能通过网络恢复。
 
-### Completed locally
+## 自动化测试
 
-- C HAL implemented for initialization/cleanup, signed differential motors,
-  three servos, ultrasonic distance with timeout/filtering, four tracking
-  sensors, two avoid sensors, onboard button and RGB output.
-- Python ctypes wrapper and safe GPIO motor backend implemented.
-- IR and camera line sources implemented behind one `LineReading` interface.
-- PD steering, bounded lost-line search and latched lost-line stop implemented.
-- Obstacle levels and `RUNNING -> PAUSED -> WAIT_CLEAR -> RUNNING` state machine
-  implemented with stable-clear time and debounced manual button resume.
-- Arduino framed serial protocol, Python backend and watchdog firmware implemented.
-- Optional OpenCV-DNN infrastructure, MobileNet-SSD person decoder, figurine
-  classifier interface and shared camera stream implemented.
-- Installation, architecture, API, schedule and test-plan documentation written.
+- 初始版本：8 项测试通过。
+- 完成视觉和安全优化后：21 项测试通过。
+- 增加 TCP 安全恢复测试后：24 项测试通过。
+- 最新结果：本机和树莓派端 24 项全部通过。
 
-### Automated verification
+测试包括行为状态机、按钮去抖、故障锁定、巡线映射、丢线处理、配置校验、Arduino 协议、串口异常、TCP 认证、视觉解码和目标转向。
 
-- Initial local test run: 8/8 passed.
-- Raspberry Pi test run after first deployment: 8/8 passed.
-- Local Python compileall passed before the final vision integration edits.
-- A ninth vision decoder test was added after that run and still needs execution.
+## 树莓派部署
 
-### Raspberry Pi verification
+目标环境：
 
-Target: `pi@10.118.221.59`, hostname `yahboom4wd`, Raspbian Buster,
-Python 3.7.3, OpenCV 4.1.2.
+- 地址：`10.118.221.59`
+- 主机名：`yahboom4wd`
+- 系统：Raspbian Buster
+- Python：3.7.3
+- OpenCV：4.1.2
+- 部署目录：`/home/pi/SmartCarV2`
 
-- `/home/pi/SmartCarV2` was created and the HAL compiled successfully with GCC
-  and wiringPi.
-- Safe HAL smoke test passed while the legacy controller was temporarily paused:
-  - tracking: `[0, 0, 0, 1]`
-  - avoid: `[0, 1]`
-  - ultrasonic distance: approximately `49.51 cm`
-  - button: `False`
-- Motors were explicitly braked; no autonomous driving loop was started.
-- Legacy `/home/pi/SmartCar/bluetooth_control` was restored and verified as one
-  running process (PID at the time: 1155).
+HAL 已在树莓派上使用 GCC 和 wiringPi 编译成功。诊断期间始终保持电机刹车，没有启动自主行驶循环。原厂 `/home/pi/SmartCar/bluetooth_control` 在测试结束后恢复为单实例运行。
 
-## Important deployment boundary
+## 传感器台架结果
 
-The Pi contains the version deployed before the latest edits to:
+只读监视工具运行约 30 秒。超声波能够响应近处物体，采样包含约 4.5 cm、6.9 cm、7.7 cm、11.9 cm、25.1 cm 和 68 cm，开阔方向约为 160 cm 至 198 cm。
 
-- shared `CameraStream`
-- MobileNet-SSD person decoder
-- `--person-model` / `--person-config` CLI integration
-- `tests/test_vision.py`
+当次监视期间没有移动黑线，也没有分别遮挡左右红外模块，因此四路巡线保持 `[0,0,0,1]`、左右避障保持 `[0,1]` 不能用于判断模块故障。按钮一直为 `False`，但当前硬件没有找到明确实体按钮。
 
-Those latest files exist locally under `F:\开发板\SmartCarV2` but have not yet
-been retested or copied to `/home/pi/SmartCarV2`.
+## 实物模块确认
 
-## Known constraints and safety notes
+- 上层双圆筒模块为超声波传感器。
+- 超声波上方的 `BST-03 V2.0` 为 RGB 灯板。
+- 下层左右两块亮蓝灯小板为左右红外避障模块。
+- 车头底部伸出的横向黑板为四路巡线模块，传感器朝向地面。
+- 当前照片未发现可以确认的实体启动按钮。
 
-- The factory `bluetooth_control` process and SmartCarV2 must never run together;
-  both own the same GPIO/PWM resources.
-- WiringPi pin 10 (BCM8) is used as the button in the key example but as the
-  buzzer in another legacy example. SmartCarV2 reserves it for the button and
-  does not drive the buzzer.
-- The photographed RGB headlight remains red even during direct GPIO tests; this
-  is currently diagnosed as a cable/interface/lamp-board hardware fault.
-- Person model files and figurine training data are not included. Locally
-  licensed model artifacts and a subject-separated dataset are still required.
-- Arduino firmware is implemented but cannot be hardware-tested until an Arduino
-  and its exact motor-driver pin mapping are connected.
+## 摄像头检查
 
-## Resume checklist
+Linux 将 USB 摄像头识别为 `Sanhao Face`：
 
-1. Run local `compileall` and all tests, including `test_vision.py`.
-2. Review shared-camera shutdown behavior and DNN error handling.
-3. Sync the final vision changes to the Pi and rerun all tests.
-4. Do not start `main.py` until the legacy controller is stopped and wheels are raised.
-5. Calibrate line thresholds/PID and obstacle distances on the physical track.
-6. Supply MobileNet-SSD model files and figurine dataset if optional vision must
-   be completed, then measure FPS and accuracy on the Pi.
-7. Confirm Arduino board/driver/pins before flashing and watchdog testing.
+- `/dev/video0`：图像采集节点。
+- `/dev/video1`：元数据节点。
+- 驱动：`uvcvideo`。
+- 支持 YUYV 和 MJPG，以及 320×240、640×480 等分辨率。
 
-## Legacy migration
+OpenCV 读取首帧超时，随后 V4L2 返回 `Device or resource busy`。当前没有完成摄像头巡线实机测试。后续需要重启树莓派或重新插拔摄像头，并检查 `/dev/video0` 的进程占用。
 
-Useful concepts from `SmartCarV2.2` were migrated into the main tree in a
-safety-hardened form: authenticated/stream-framed TCP control, HSV color target
-detection, and visual target steering. Unsafe legacy HAL, fail-open ultrasonic
-handling, automatic obstacle resume and indefinite lost-line driving were not
-migrated. The legacy subdirectory was removed after the expanded test suite
-passed.
-## 2026-09-04 - Sensor identification and buttonless safe resume
+## RGB 灯问题
 
-- Identified the two blue-lit BST-01 side boards as left/right infrared obstacle sensors.
-- Identified the underside four-channel board as the line sensor; line calibration is deferred until a black test strip is available.
-- No physical KEY/START button could be confirmed from the installed hardware photographs.
-- Added authenticated TCP `RESUME`; it only queues a request. The behavior loop still requires `WAIT_CLEAR` and the configured clear confirmation interval, and cancels the request if an obstacle returns.
-- Added regression tests for accepted, premature, and cancelled remote resume requests. All 24 tests pass locally and on the Raspberry Pi.
-- Camera enumerates as USB UVC `Sanhao Face` on `/dev/video0` (capture) and `/dev/video1` (metadata), but frame capture timed out and the driver subsequently reported `Device or resource busy`. Camera recovery remains pending; the legacy Bluetooth controller was restored after diagnostics.
+`BST-03 V2.0` 灯板始终显示红色，直接 GPIO 控制没有产生可见变化。当前判断更可能是 `R/G/B/GND` 线序、共阳共阴驱动方式、线束或灯板硬件问题。软件接口已经实现，但不能标记为实机验收通过。
+
+## 当前已完成
+
+- C 语言 HAL 和 Python `ctypes` 封装。
+- GPIO 电机后端和 Arduino 串口后端代码。
+- 红外巡线和摄像头巡线统一接口。
+- PD 差速、丢线搜索和锁定停车。
+- 超声波与红外组合避障。
+- 停止恢复状态机和安全 TCP 恢复。
+- Arduino 帧协议、CRC8 和看门狗固件。
+- OpenCV DNN、人形解码、HSV 检测和目标跟踪框架。
+- 安装、架构、API、测试和项目状态文档。
+- 本机与树莓派端 24 项自动化测试。
+
+## 当前待完成
+
+1. 分别遮挡左右红外模块并调整电位器。
+2. 使用固定距离标定超声波阈值。
+3. 准备黑色胶带或黑纸，确认四路巡线顺序和有效电平。
+4. 恢复 USB 摄像头并完成 OpenCV 连续读帧。
+5. 核对 RGB 灯板线序和驱动方式。
+6. 完成四电机方向、差速、刹车和舵机限位的实车测试。
+7. 完成红外与摄像头巡线的场地和 20 分钟耐久测试。
+8. 提供人形模型和雕像数据集并测量准确率与速度。
+9. 连接 Arduino 实物并验证通信中断后 500 ms 内刹车。
+
+## 后续测试要求
+
+- 原厂 `bluetooth_control` 和 SmartCarV2 不能同时运行。
+- 首次电机测试必须架空轮子，并保留物理断电手段。
+- 传感器、摄像头或通信异常时不能通过按钮或 TCP 绕过停车。
+- 必做功能通过前不投入时间训练可选模型。

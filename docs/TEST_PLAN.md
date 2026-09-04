@@ -1,33 +1,137 @@
-# Test and acceptance plan
+# 测试与验收计划
 
-## Automated
+## 自动化测试
 
-Run `make test`. Tests cover fragmented/corrupt serial frames, IR line mapping,
-lost-line hold/search/braking, configuration validation, obstacle latching,
-manual resume debouncing, held-button rejection, latched faults, authenticated
-TCP control, person decoding and target steering.
+在项目根目录执行：
 
-## Bench tests
+```bash
+make test
+```
 
-- Raise wheels; test each signed motor command and Ctrl+C braking.
-- Validate all three servos, four tracking sensors, two avoid sensors, ultrasonic
-  timeout, button and RGB channels independently.
-- Disconnect camera, cover sensors and inject invalid distance readings; each
-  safety failure must brake rather than continue.
-- With Arduino, disconnect USB and stop the Pi process; motors must stop within
-  500 ms. Also test bad CRC, truncated frames and duplicate motor sequences.
+当前 24 项测试覆盖：
 
-## Track tests
+- 配置参数校验。
+- 红外巡线误差映射。
+- 丢线低速保持、方向搜索和最终停车。
+- 障碍停车和传感器错误。
+- 按钮去抖、按钮长按拒绝和安全恢复。
+- TCP 认证、停止、恢复请求和速度限制。
+- 锁定 `FAULT` 状态。
+- Arduino 帧分片、错误 CRC、负载限制和解析恢复。
+- 串口短写、刹车和关闭。
+- 人形检测结果过滤。
+- 视觉目标转向和目标缺失停车。
 
-- IR and camera modes: straight, left/right bend, crossing and temporary line loss.
-- Obstacle at clear, warning and blocked distances.
-- Resume button ignored while blocked; accepted only after stable clear time.
-- Run each line source for 20 minutes and record completion count, failures,
-  CPU load and camera FPS.
+提交代码前必须运行全部测试。涉及电机、安全状态机或通信协议的修改必须同时增加对应故障测试。
 
-## Optional vision evaluation
+## 台架安全准备
 
-Keep train/validation/test subjects separate. Record person false positives,
-misses and FPS under different light, range and occlusion. Report a confusion
-matrix for `dress`, `top`, `trousers`, with low-confidence samples mapped to
-`unknown`. Classification is display/logging only and never drives motion.
+1. 架空四个轮子。
+2. 保留物理断电手段。
+3. 停止原厂 `bluetooth_control`。
+4. 确认电池、线束和插头没有松动或反插。
+5. 首先运行只读传感器工具，不直接启动自主行驶。
+
+## 基础硬件测试
+
+### 电机
+
+- 单独测试左轮组和右轮组的正转、反转和刹车。
+- 检查相同正速度是否对应相同前进方向。
+- 检查差速转向方向。
+- 按下 `Ctrl+C`，电机必须立即停止。
+- 制造 Python 异常，确认 `finally` 路径仍会刹车。
+
+### 舵机
+
+- 分别测试三个通道。
+- 从中位开始逐步接近机械边界。
+- 记录安全角度范围，禁止长时间堵转。
+
+### 超声波
+
+- 在 10 cm、20 cm、30 cm 和 50 cm 放置平面障碍。
+- 每个距离采集多次并记录中位数、最大误差和超时次数。
+- 遮挡或拔除传感器，连续失败必须触发停车。
+
+### 左右红外避障
+
+- 分别在左右模块前方 5 cm 至 15 cm 放置纸板。
+- 确认左右通道可以独立变化。
+- 调节电位器，使无障碍时不触发，近处障碍时稳定触发。
+- 记录有效电平和软件通道顺序。
+
+### 四路巡线
+
+- 使用白色底面和宽度不小于约 16 mm 的黑色胶带或黑纸。
+- 依次把黑色区域移动到四个探头下方。
+- 确认探头物理顺序和有效电平。
+- 完成前不得假设当前 `[0,0,0,1]` 采样代表正确线路位置。
+
+### RGB 灯
+
+- 核对 `R/G/B/GND` 线序。
+- 分别测试红、绿、蓝和关闭。
+- 如果输出不变，断电检查共阳共阴方式、线束和灯板。
+
+## 行为状态机测试
+
+| 场景 | 预期结果 |
+|---|---|
+| 运行时出现障碍 | 立即进入 `PAUSED` 并刹车 |
+| 障碍消失 | 进入 `WAIT_CLEAR`，继续刹车 |
+| 稳定时间未满足时请求恢复 | 不恢复 |
+| 障碍仍存在时请求恢复 | 请求无效 |
+| 清除稳定且人工请求有效 | 进入 `RUNNING` |
+| 等待期间障碍再次出现 | 取消请求并返回 `PAUSED` |
+| 按钮在障碍期间持续按住 | 不得意外恢复 |
+| 巡线丢失超过时限 | 进入锁定 `FAULT` |
+| `FAULT` 状态发送 `RESUME` | 不恢复 |
+
+## 赛道测试
+
+红外和摄像头巡线模式分别测试：
+
+- 直线。
+- 左右弯道。
+- 交叉线。
+- 短暂丢线后重新发现。
+- 超过丢线时限后的停车。
+- 障碍警告、阻挡、移除和人工恢复。
+
+先使用低速配置，再逐步调节 `kp`、`kd` 和基础速度。每种巡线模式需要连续运行至少 20 分钟，并记录完成圈数、丢线次数、安全停车次数、CPU 占用和摄像头帧率。
+
+## 摄像头故障测试
+
+- 启动前没有摄像头。
+- 运行期间拔除摄像头。
+- 摄像头线程读帧超时。
+- 返回空帧或错误分辨率。
+
+上述情况都必须停车，不能使用陈旧画面继续运动。
+
+## Arduino 通信测试
+
+- 验证正转、反转、差速、刹车和状态回传。
+- 注入错误 CRC、错误长度、未知命令、分片和重复包。
+- 拔除 USB 串口。
+- 停止树莓派进程。
+- 阻断心跳和电机命令。
+
+任何失联场景必须在 500 ms 内停车。GPIO 后端和 Arduino 后端应使用同一套行为层测试。
+
+## 可选视觉功能测试
+
+人形检测应测试单人、多人、局部遮挡、不同距离和不同光照，记录漏检率、误报率、推理帧率和 CPU 占用。
+
+雕像分类应按照不同雕像主体隔离训练集、验证集和测试集，输出 `dress`、`top`、`trousers` 和 `unknown` 的混淆矩阵。低于置信度阈值的目标必须归入 `unknown`。分类结果只用于显示和记录，不直接驱动车辆。
+
+## 当前验收状态
+
+- 24 项自动化测试在本机和树莓派端全部通过。
+- 超声波已经确认能够随障碍物距离变化。
+- 左右红外避障仍需分别遮挡并标定。
+- 四路巡线等待黑色测试材料。
+- 摄像头已经枚举，但首帧读取超时，需要恢复设备。
+- RGB 灯板持续红灯，硬件原因尚未排除。
+- Arduino、人形模型和雕像分类尚未完成实物或数据集验收。

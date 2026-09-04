@@ -1,43 +1,74 @@
-# Architecture
+# SmartCarV2 软件架构
+
+## 总体结构
 
 ```text
-IR sensors ──> IRLineSource ───────┐
-Camera ─────> CameraLineSource ────┼─> BehaviorManager ─> MotorBackend
-US + IR ────> ObstacleDetector ────┘          │             ├─ GPIO/C HAL
-Button ───────────────────────────────────────┘             └─ Arduino serial
+四路红外 ──> IRLineSource ───────────┐
+摄像头 ────> CameraLineSource ───────┼──> BehaviorManager ──> MotorBackend
+超声波和红外 ─> ObstacleDetector ────┤                         ├──> GPIO 和 C HAL
+按钮或 TCP 恢复请求 ─────────────────┘                         └──> Arduino 串口
 
 Python ──ctypes──> libsmartcar.so ──wiringPi──> Raspberry Pi GPIO
 ```
 
-The 10 Hz behavior loop gives safety priority over navigation. `BLOCKED` or
-repeated sensor failure brakes immediately. Once clear, the state changes from
-`PAUSED` to `WAIT_CLEAR`; only a debounced physical button edge or an authenticated
-TCP resume request can resume after the stable-clear interval. A button must first
-be observed released after the stop, and a queued TCP request is cancelled if an
-obstacle returns, so neither input can bypass the safety gate.
-Warning distance uses a reduced straight speed. Clear state delegates to the
-selected line source and PD steering controller. A prolonged lost line enters
-`FAULT` and remains stopped until restart.
+C 语言硬件抽象层负责 GPIO、PWM、超声波时序和传感器读取。Python 层把硬件读数转换为统一数据结构，由 `BehaviorManager` 按安全优先级处理，再通过统一的 `MotorBackend` 输出速度。
 
-The optional Arduino backend preserves the same `run(left,right)` and `brake()`
-interface. Its firmware independently brakes after 500 ms without a valid
-motor command or heartbeat.
+## 行为循环
 
-## State machine
+行为循环默认以 10 Hz 运行。每次循环依次完成：
+
+1. 读取并去抖实体按钮。
+2. 读取超声波和左右红外避障状态。
+3. 检查可选人形检测结果和视觉线程健康状态。
+4. 优先处理障碍、传感器错误和停车恢复状态。
+5. 在安全条件满足时读取选定的巡线源。
+6. 由 PD 控制器计算左右轮速度。
+7. 向 GPIO 或 Arduino 后端发送电机命令。
+
+## 停止恢复状态机
 
 ```text
-RUNNING -- obstacle/person/sensor failure --> PAUSED
-PAUSED  -- obstacle absent ----------------> WAIT_CLEAR
-WAIT_CLEAR -- stable clear + manual request --> RUNNING
-RUNNING -- line lost timeout -------------> FAULT
-FAULT ------------------------------------> restart required
+RUNNING -- 障碍 人形确认或传感器失败 --> PAUSED
+PAUSED  -- 障碍消失 ------------------> WAIT_CLEAR
+WAIT_CLEAR -- 稳定清除和人工恢复请求 --> RUNNING
+RUNNING -- 丢线超过停止时限 ---------> FAULT
+FAULT   -- 重启并重新完成自检 --------> RUNNING
 ```
 
-## Control priority
+检测到阻挡或连续传感器错误时，系统立即执行刹车。障碍消失后先进入 `WAIT_CLEAR` 并计算稳定清除时间。只有去抖后的实体按钮按下边沿，或者经过认证的 TCP `RESUME` 请求，才能在安全条件满足后恢复。
 
-1. Fatal exception or sensor failure: brake.
-2. Blocking obstacle or confirmed person: brake and latch pause.
-3. Warning distance: reduced straight speed.
-4. Selected line source: PD differential steering.
-5. Lost line: reduced-speed continuation, bounded directional search, followed
-   by a latched `FAULT` stop that cannot restart itself.
+按钮必须先被检测为释放状态，持续按住按钮不能导致意外恢复。TCP 恢复请求如果遇到障碍再次出现会立即取消。`FAULT` 是锁定状态，不能通过按钮或网络自行恢复。
+
+## 控制优先级
+
+1. 未处理异常、巡线源失效或通信失败：立即刹车。
+2. 阻挡距离、红外障碍或连续多帧确认人形：立即刹车并暂停。
+3. 警告距离：以限制速度直行。
+4. 安全状态：交给所选巡线源和 PD 差速控制。
+5. 丢线：先低速保持，再按照最后方向搜索，超过时限后进入 `FAULT`。
+
+## 巡线源
+
+`IRLineSource` 和 `CameraLineSource` 都返回：
+
+```python
+LineReading(error, confidence, detected, timestamp)
+```
+
+`error` 为归一化横向误差，范围约为 `-1.0` 至 `1.0`。一周版本通过 `--line-source ir|camera` 选择数据源，不自动融合两个巡线结果。
+
+## 电机后端
+
+`GPIOMotorBackend` 使用 C HAL 直接控制树莓派 GPIO。`ArduinoMotorBackend` 使用带 CRC8 的二进制串口协议发送命令。两者均提供：
+
+```python
+run(left, right)
+brake()
+close()
+```
+
+Arduino 固件具有独立看门狗。如果超过 500 ms 没有收到满足条件的合法命令，Arduino 会主动刹车。
+
+## 并发边界
+
+摄像头采集和 DNN 推理可以在独立线程运行，行为循环只读取最新结果。TCP `STATUS` 返回行为循环缓存的传感器快照，不会在网络线程中再次触发超声波测量。远程线程只能请求停车或恢复，最终状态转换由行为循环完成。
