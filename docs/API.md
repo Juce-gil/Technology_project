@@ -95,6 +95,15 @@ line_source.read() -> LineReading(error, confidence, detected, timestamp)
 - `detected`：是否检测到线路。
 - `timestamp`：采样时间。
 
+### LineController
+
+```python
+controller.command(reading, now=None) -> (left, right, must_stop)
+controller.reset_motion()
+```
+
+控制器使用 `kp` 和 `kd` 计算差速转向，在计算前通过 `error_filter_alpha` 平滑误差，并通过 `derivative_filter_alpha` 对微分项低通滤波。`max_speed_change_per_second` 限制正常运行时左右轮命令的变化速度。`reset_motion()` 在安全停车时清除旧速度、滤波状态和丢线方向；真正的刹车由电机后端立即执行，不受速度变化率限制。
+
 ### MotorBackend
 
 ```python

@@ -68,29 +68,70 @@ class CameraLineSource:
 class LineController:
     def __init__(self, config, motor_config):
         self.config = config; self.motor = motor_config
-        self.last_error = 0.0; self.last_seen = None; self.last_time = None
+        self.filtered_error = 0.0; self.filtered_derivative = 0.0
+        self.last_raw_error = 0.0; self.last_direction_error = 0.0
+        self.last_seen = None; self.last_time = None
         self.last_output = (0, 0)
 
     def command(self, reading, now=None):
         now = time.monotonic() if now is None else now
         if reading.detected:
-            dt = max(0.01, now - self.last_time) if self.last_time is not None else 0.1
-            derivative = (reading.error - self.last_error) / dt
-            turn = self.config.kp * reading.error + self.config.kd * derivative
-            self.last_error = reading.error; self.last_seen = now; self.last_time = now
+            if self.last_time is None:
+                dt = 0.1
+                self.filtered_error = reading.error
+                self.filtered_derivative = 0.0
+            else:
+                dt = min(0.25, max(0.01, now - self.last_time))
+                error_alpha = self.config.error_filter_alpha
+                derivative_alpha = self.config.derivative_filter_alpha
+                self.filtered_error = (error_alpha * reading.error +
+                                       (1.0 - error_alpha) * self.filtered_error)
+                raw_derivative = (reading.error - self.last_raw_error) / dt
+                self.filtered_derivative = (derivative_alpha * raw_derivative +
+                                            (1.0 - derivative_alpha) * self.filtered_derivative)
+            turn = (self.config.kp * self.filtered_error +
+                    self.config.kd * self.filtered_derivative)
+            self.last_raw_error = reading.error
+            if abs(reading.error) > 1e-6: self.last_direction_error = reading.error
+            self.last_seen = now; self.last_time = now
             base = self.motor.base_speed
-            output = (self._clip(base + turn), self._clip(base - turn))
-            self.last_output = output
+            target = (self._clip(base + turn), self._clip(base - turn))
+            output = self._slew(target, dt)
             return output[0], output[1], False
         elapsed = float("inf") if self.last_seen is None else now - self.last_seen
-        if elapsed >= self.config.lost_stop_seconds: return 0, 0, True
+        if elapsed >= self.config.lost_stop_seconds:
+            self.last_output = (0, 0)
+            return 0, 0, True
         if elapsed < self.config.lost_search_seconds:
             left, right = self.last_output
             scale = self.motor.search_speed / float(max(1, max(abs(left), abs(right))))
-            return int(left * min(1.0, scale)), int(right * min(1.0, scale)), False
-        direction = 1 if self.last_error >= 0 else -1
+            output = (int(left * min(1.0, scale)), int(right * min(1.0, scale)))
+            self.last_output = output
+            return output[0], output[1], False
+        direction = 1 if self.last_direction_error >= 0 else -1
         speed = self.motor.search_speed
-        return direction * speed, -direction * speed, False
+        self.last_output = (direction * speed, -direction * speed)
+        return self.last_output[0], self.last_output[1], False
+
+    def reset_motion(self):
+        """Reset dynamic control history after a safety brake."""
+        self.filtered_error = 0.0; self.filtered_derivative = 0.0
+        self.last_raw_error = 0.0; self.last_direction_error = 0.0
+        self.last_seen = None; self.last_time = None; self.last_output = (0, 0)
+
+    def _slew(self, target, dt):
+        max_step = self.config.max_speed_change_per_second * dt
+        output = tuple(self._approach(current, wanted, max_step)
+                       for current, wanted in zip(self.last_output, target))
+        self.last_output = output
+        return output
+
+    @staticmethod
+    def _approach(current, target, max_step):
+        delta = target - current
+        if delta > max_step: return int(current + max_step)
+        if delta < -max_step: return int(current - max_step)
+        return int(target)
 
     def _clip(self, value):
         return int(max(-self.motor.max_speed, min(self.motor.max_speed, value)))

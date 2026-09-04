@@ -42,7 +42,7 @@ class BehaviorManager:
         now = time.monotonic() if now is None else now
         button_edge = self.button.pressed_edge(now)
         if self.state == RunState.FAULT:
-            self.motor.brake(); return self.state
+            self._safety_brake(); return self.state
         obstacle = self.obstacles.read()
         with self._status_lock: self.last_obstacle = obstacle
         person_blocked = self._person_blocked()
@@ -51,15 +51,15 @@ class BehaviorManager:
         if unsafe:
             if self.state != RunState.PAUSED: self.log.warning("safety pause: %s", obstacle.level.value)
             self.state = RunState.PAUSED; self.clear_since = None
-            self.resume_armed = False; self._remote_resume.clear(); self.motor.brake(); return self.state
+            self.resume_armed = False; self._remote_resume.clear(); self._safety_brake(); return self.state
 
         if self.state == RunState.PAUSED:
             self.clear_since = now if obstacle.level == ObstacleLevel.CLEAR else None
             self.state = RunState.WAIT_CLEAR; self.resume_armed = not self.button.stable
-            self.motor.brake(); return self.state
+            self._safety_brake(); return self.state
 
         if self.state == RunState.WAIT_CLEAR:
-            self.motor.brake()
+            self._safety_brake()
             if obstacle.level != ObstacleLevel.CLEAR:
                 self.clear_since = None; self._remote_resume.clear(); return self.state
             if not self.button.stable: self.resume_armed = True
@@ -77,11 +77,11 @@ class BehaviorManager:
         reading = self.line_source.read()
         with self._status_lock: self.last_line = reading
         if hasattr(self.line_source, "is_healthy") and not self.line_source.is_healthy():
-            self.state = RunState.FAULT; self.motor.brake(); self.log.error("line source unhealthy")
+            self.state = RunState.FAULT; self._safety_brake(); self.log.error("line source unhealthy")
             return self.state
         left, right, must_stop = self.controller.command(reading, now)
         if must_stop:
-            self.state = RunState.FAULT; self.motor.brake(); self.log.error("line lost timeout")
+            self.state = RunState.FAULT; self._safety_brake(); self.log.error("line lost timeout")
         else: self.motor.run(left, right)
         return self.state
 
@@ -90,6 +90,10 @@ class BehaviorManager:
         self.state = RunState.PAUSED
         self.clear_since = None
         self.resume_armed = False
+        self._safety_brake()
+
+    def _safety_brake(self):
+        if hasattr(self.controller, "reset_motion"): self.controller.reset_motion()
         self.motor.brake()
 
     def request_resume(self):
@@ -122,7 +126,7 @@ class BehaviorManager:
         return self.person_hits >= self.config.safety.person_confirm_frames
 
     def shutdown(self):
-        try: self.motor.brake()
+        try: self._safety_brake()
         except Exception: self.log.exception("motor brake failed during shutdown")
         try:
             if hasattr(self.line_source, "close"): self.line_source.close()

@@ -14,6 +14,9 @@ class MotorConfig:
 class LineConfig:
     kp: float = 95.0
     kd: float = 28.0
+    error_filter_alpha: float = 0.35
+    derivative_filter_alpha: float = 0.25
+    max_speed_change_per_second: float = 300.0
     lost_search_seconds: float = 1.5
     lost_stop_seconds: float = 4.0
     camera_index: int = 0
@@ -81,4 +84,10 @@ class CarConfig:
             raise ValueError("base_speed outside motor range")
         if not 0.0 <= self.line.roi_top_ratio < 1.0:
             raise ValueError("roi_top_ratio must be in [0,1)")
+        if not 0.0 < self.line.error_filter_alpha <= 1.0:
+            raise ValueError("error_filter_alpha must be in (0,1]")
+        if not 0.0 < self.line.derivative_filter_alpha <= 1.0:
+            raise ValueError("derivative_filter_alpha must be in (0,1]")
+        if self.line.max_speed_change_per_second <= 0.0:
+            raise ValueError("max_speed_change_per_second must be positive")
         return self

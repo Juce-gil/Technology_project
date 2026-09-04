@@ -13,5 +13,12 @@ class ConfigTests(unittest.TestCase):
         config = CarConfig(); config.line.lost_search_seconds = config.line.lost_stop_seconds
         with self.assertRaises(ValueError): config.validate()
 
+    def test_bad_filter_and_slew_values_are_rejected(self):
+        for field, value in (("error_filter_alpha", 0),
+                             ("derivative_filter_alpha", 1.1),
+                             ("max_speed_change_per_second", 0)):
+            config = CarConfig(); setattr(config.line, field, value)
+            with self.assertRaises(ValueError): config.validate()
+
 
 if __name__ == "__main__": unittest.main()
